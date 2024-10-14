@@ -18,7 +18,26 @@ github_token = os.getenv('GITHUB_TOKEN')
 repository = os.getenv('GITHUB_REPOSITORY')
 
 # Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+class ColoredLevelFormatter(logging.Formatter):
+    COLOR_CODE = {
+        'WARNING':  "\x1b[31m",
+    }
+
+    def format(self, record):
+        levelname = record.levelname
+        levelname_color = self.COLOR_CODE.get(levelname, "")
+        reset_color = "\x1b[0m"
+        log_msg = super().format(record)
+        colored_log_msg = f"{levelname_color}{log_msg}{reset_color}"
+        return colored_log_msg
+
+# Setup Logging Level Color
+logging.getLogger().setLevel(logging.INFO)
+formatter = ColoredLevelFormatter("%(asctime)s %(message)s", datefmt='%Y-%m-%d %H:%M:%S')
+console = logging.StreamHandler()
+console.setFormatter(ColoredLevelFormatter("%(asctime)s %(message)s", datefmt='%Y-%m-%d %H:%M:%S'))
+logger = logging.getLogger()
+logger.addHandler(console)
 
 # Path to ChromeDriver
 chrome_driver_path = "/usr/bin/chromedriver"
@@ -78,10 +97,6 @@ def get_download_link(version: str) -> str:
 
 # Download the APK or resource
 def download_resource(url: str, filename: str) -> str:
-    if not url:
-        logging.error(f"Download URL is None. Cannot download {filename}.")
-        return None
-
     filepath = os.path.join("./", filename)
     
     # Add User-Agent header
@@ -328,51 +343,107 @@ def create_github_release(app_name, download_files, apk_file_path):
     else:
         logging.error(f"Failed to upload {apk_file_path}. Status code: {response.status_code}")
 
-# List of repositories to download assets from
-repositories = [
-    "https://github.com/ReVanced/revanced-patches/releases/latest",
-    "https://github.com/ReVanced/revanced-cli/releases/latest",
-    "https://github.com/ReVanced/revanced-integrations/releases/latest"
-]
+# Function to run the build process
+def run_build():
+    logging.info("Running build process...")
 
-# Download the assets
-all_downloaded_files = []
-for repo in repositories:
-    downloaded_files = download_assets_from_repo(repo)
-    all_downloaded_files.extend(downloaded_files)  # Combine all downloaded files
+    # List of repositories to download assets from
+    repositories = [
+        "https://github.com/ReVanced/revanced-patches/releases/latest",
+        "https://github.com/ReVanced/revanced-cli/releases/latest",
+        "https://github.com/ReVanced/revanced-integrations/releases/latest"
+    ]
 
-# After downloading, find the necessary files
-cli_jar_files = [f for f in all_downloaded_files if 'revanced-cli' in f and f.endswith('.jar')]
-patches_jar_files = [f for f in all_downloaded_files if 'revanced-patches' in f and f.endswith('.jar')]
-integrations_apk_files = [f for f in all_downloaded_files if 'revanced-integrations' in f and f.endswith('.apk')]
+    # Download the assets
+    all_downloaded_files = []
+    for repo in repositories:
+        downloaded_files = download_assets_from_repo(repo)
+        all_downloaded_files.extend(downloaded_files)  # Combine all downloaded files
 
-# Ensure we have the required files
-if not cli_jar_files or not patches_jar_files or not integrations_apk_files:
-    logging.error("Failed to download necessary ReVanced files.")
-else:
-    cli_jar = cli_jar_files[0]  # Get the first (and probably only) CLI JAR
-    patches_jar = patches_jar_files[0]  # Get the first patches JAR
-    integrations_apk = integrations_apk_files[0]  # Get the first integrations APK
+    # After downloading, find the necessary files
+    cli_jar_files = [f for f in all_downloaded_files if 'revanced-cli' in f and f.endswith('.jar')]
+    patches_jar_files = [f for f in all_downloaded_files if 'revanced-patches' in f and f.endswith('.jar')]
+    integrations_apk_files = [f for f in all_downloaded_files if 'revanced-integrations' in f and f.endswith('.apk')]
 
-    # Download the YouTube APK
-    input_apk, version = download_uptodown()
-
-    if input_apk:
-        # Run the patching process
-        output_apk = run_java_command(cli_jar, patches_jar, integrations_apk, input_apk, version)
-        if output_apk:
-            logging.info(f"Successfully created the patched APK: {output_apk}")
-
-            # Prepare download files for the release
-            download_files = {
-                "revanced-patches": patches_jar,
-                "revanced-integrations": integrations_apk,
-                "revanced-cli": cli_jar
-            }
-
-            # Create GitHub release
-            create_github_release("ReVanced", download_files, output_apk)
-        else:
-            logging.error("Failed to patch the APK.")
+    # Ensure we have the required files
+    if not cli_jar_files or not patches_jar_files or not integrations_apk_files:
+        logging.error("Failed to download necessary ReVanced files.")
     else:
-        logging.error("Failed to download the YouTube APK.")
+        cli_jar = cli_jar_files[0]  # Get the first (and probably only) CLI JAR
+        patches_jar = patches_jar_files[0]  # Get the first patches JAR
+        integrations_apk = integrations_apk_files[0]  # Get the first integrations APK
+
+        # Download the YouTube APK
+        input_apk, version = download_uptodown()
+
+        if input_apk:
+            # Run the patching process
+            output_apk = run_java_command(cli_jar, patches_jar, integrations_apk, input_apk, version)
+            if output_apk:
+                logging.info(f"Successfully created the patched APK: {output_apk}")
+
+                # Prepare download files for the release
+                download_files = {
+                    "revanced-patches": patches_jar,
+                    "revanced-integrations": integrations_apk,
+                    "revanced-cli": cli_jar
+                }
+
+                # Create GitHub release
+                create_github_release("ReVanced", download_files, output_apk)
+            else:
+                logging.error("Failed to patch the APK.")
+        else:
+            logging.error("Failed to download the YouTube APK.")
+
+
+# Function to get the latest release version from a GitHub repository
+def get_latest_release_version(repo: str) -> str:
+    url = f"https://api.github.com/repos/{repo}/releases/latest"
+    headers = {"Authorization": f"token {os.getenv('GITHUB_TOKEN')}"}
+    
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            latest_release = response.json()
+            tag_name = latest_release['tag_name']  # Extract tag name (version) from the latest release
+            return extract_version_from_tag(tag_name)  # Extract numerical version from tag
+        else:
+            logging.error(f"Failed to fetch latest release version from {repo}: {response.status_code}")
+            return None
+    except Exception as e:
+        logging.error(f"Exception occurred while fetching release from {repo}: {e}")
+        return None
+
+# Extract numerical version from a tag (e.g., v4.16.0-release to 4.16.0)
+def extract_version_from_tag(tag: str) -> str:
+    match = re.search(r'(\d+\.\d+\.\d+)', tag)
+    if match:
+        return match.group(1)
+    return None
+
+# Function to compare the versions of revanced-patches repository and the current repository
+def compare_repository_versions(repo_patches: str):
+    version_patches = get_latest_release_version(repo_patches)
+    version_current = get_latest_release_version(repository)  # Current repository
+    
+    if version_patches and version_current:
+        if version_patches == version_current:
+            logging.warning("Patched!!!Skipping build...")
+            return True  # Skip build if versions are the same
+        else:
+            return False  # Run build if versions differ
+    else:
+        return False  # Run build if either repository fails to respond
+
+
+# Main execution
+if __name__ == "__main__":    
+    # Define the repository to compare
+    repo_patches = "ReVanced/revanced-patches"
+
+    # Compare versions
+    skip_build = compare_repository_versions(repo_patches)
+
+    if not skip_build:
+        run_build()  # Only run build if versions differ or repository doesn't respond
