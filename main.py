@@ -1,17 +1,17 @@
+import os
+import re
+import json
 import logging
 import requests
 import subprocess
+from bs4 import BeautifulSoup
 from selenium import webdriver
+from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException
-from bs4 import BeautifulSoup
-import os
-import json
-import re
+from selenium.webdriver.support import expected_conditions as EC
 
 # Environment variables for GitHub token and repository
 github_token = os.getenv('GITHUB_TOKEN')
@@ -20,22 +20,34 @@ repository = os.getenv('GITHUB_REPOSITORY')
 # Setup logging
 class ColoredLevelFormatter(logging.Formatter):
     COLOR_CODE = {
-        'WARNING':  "\x1b[31m",
+        'DEBUG':    "\x1b[34m",  # Blue
+        'INFO':     "\x1b[32m",  # Green
+        'WARNING':  "\x1b[33m",  # Yellow
+        'ERROR':    "\x1b[31m",  # Red
+        'CRITICAL': "\x1b[41m",  # Red background
     }
+    
+    TIMESTAMP_COLOR = "\x1b[36m"  # Cyan for timestamp
+    RESET_COLOR = "\x1b[0m"       # Reset color
 
     def format(self, record):
         levelname = record.levelname
         levelname_color = self.COLOR_CODE.get(levelname, "")
-        reset_color = "\x1b[0m"
-        log_msg = super().format(record)
-        colored_log_msg = f"{levelname_color}{log_msg}{reset_color}"
-        return colored_log_msg
+        
+        # Format timestamp, level, and message separately
+        timestamp = f"{self.TIMESTAMP_COLOR}{self.formatTime(record, self.datefmt)}{self.RESET_COLOR}"
+        levelname = f"{levelname_color}{levelname}{self.RESET_COLOR}"
+        message = f"{record.getMessage()}"
 
-# Setup Logging Level Color
+        # Return the formatted log with consistent message color and different level/timestamp color
+        formatted_log = f"{timestamp} [{levelname}] {message}"
+        return formatted_log
+
+# Setup Logging with colors and custom format
 logging.getLogger().setLevel(logging.INFO)
-formatter = ColoredLevelFormatter("%(asctime)s %(message)s", datefmt='%Y-%m-%d %H:%M:%S')
+formatter = ColoredLevelFormatter(datefmt='%Y-%m-%d %H:%M:%S')
 console = logging.StreamHandler()
-console.setFormatter(ColoredLevelFormatter("%(asctime)s %(message)s", datefmt='%Y-%m-%d %H:%M:%S'))
+console.setFormatter(formatter)
 logger = logging.getLogger()
 logger.addHandler(console)
 
@@ -82,8 +94,8 @@ def get_download_link(version: str) -> str:
                 # Parse the download page for the actual download link
                 soup = BeautifulSoup(driver.page_source, "html.parser")
                 download_button = soup.find('button', {'id': 'detail-download-button'})
-                if download_button and download_button.get('data-url'):
-                    data_url = download_button.get('data-url')
+                if download_button and download_button["data-url"]:
+                    data_url = download_button["data-url"]
                     full_url = f"https://dw.uptodown.com/dwn/{data_url}"
                     driver.quit()
                     return full_url
@@ -95,7 +107,6 @@ def get_download_link(version: str) -> str:
     driver.quit()
     return None
 
-# Download the APK or resource
 def download_resource(url: str, filename: str) -> str:
     filepath = os.path.join("./", filename)
     
@@ -103,12 +114,25 @@ def download_resource(url: str, filename: str) -> str:
     headers = {
         'User-Agent': 'Mozilla/5.0 (Android 13; Mobile; rv:125.0) Gecko/125.0 Firefox/125.0'
     }
+
+    response = requests.get(url, headers=headers, stream=True)
     
-    response = requests.get(url, headers=headers)
+    # Check if the request was successful
     if response.status_code == 200:
+        final_url = response.url  # Get final URL after any redirections
+        total_size = int(response.headers.get('Content-Length', 0))  # Get the total file size
+        downloaded_size = 0
+
         with open(filepath, 'wb') as apk_file:
-            apk_file.write(response.content)
-        logging.info(f"Downloaded {filename} successfully.")
+            for chunk in response.iter_content(chunk_size=1024):
+                if chunk:  # Filter out keep-alive chunks
+                    apk_file.write(chunk)
+                    downloaded_size += len(chunk)        
+        
+        # Logging the download progress
+        logging.info(
+            f"URL: {final_url} [{downloaded_size}/{total_size}] -> \"{filename}\" [1]"
+        )
         return filepath
     else:
         logging.error(f"Failed to download APK. Status code: {response.status_code}")
@@ -137,13 +161,15 @@ def run_java_command(cli_jar, patches_jar, integrations_apk, input_apk, version)
     
     try:
         # Run the lib_command first to delete unnecessary libs
+        logging.info(f"Remove some architectures...")
         process_lib = subprocess.Popen(lib_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
+        # Print stdout and stderr in real-time with flush
         for line in iter(process_lib.stdout.readline, b''):
-            logging.info(line.decode().strip())
+            print(line.decode().strip(), flush=True)  # Direct print for stdout with flush
         
         for line in iter(process_lib.stderr.readline, b''):
-            logging.error(line.decode().strip())
+            print(f"ERROR: {line.decode().strip()}", flush=True)  # Direct print for stderr with flush
         
         process_lib.stdout.close()
         process_lib.stderr.close()
@@ -154,13 +180,15 @@ def run_java_command(cli_jar, patches_jar, integrations_apk, input_apk, version)
             return None  # Exit if lib_command fails
 
         # Now run the patch command
+        logging.info(f"Patch {input_apk} with ReVanced patches...")
         process_patch = subprocess.Popen(patch_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
+        # Print stdout and stderr in real-time with flush
         for line in iter(process_patch.stdout.readline, b''):
-            logging.info(line.decode().strip())
+            print(line.decode().strip(), flush=True)  # Direct print for stdout with flush
         
         for line in iter(process_patch.stderr.readline, b''):
-            logging.error(line.decode().strip())
+            print(f"ERROR: {line.decode().strip()}", flush=True)  # Direct print for stderr with flush
         
         process_patch.stdout.close()
         process_patch.stderr.close()
@@ -224,11 +252,22 @@ def download_assets_from_repo(release_url):
             if not asset_url.endswith('.asc'):  # Skip signature files
                 response = requests.head(asset_url, allow_redirects=True)
                 if response.status_code == 200:
-                    download_response = requests.get(asset_url, allow_redirects=True)
+                    download_response = requests.get(asset_url, allow_redirects=True, stream=True)
+                    final_url = download_response.url  # Get the final URL after any redirections
                     filename = asset_url.split('/')[-1]
+                    total_size = int(download_response.headers.get('Content-Length', 0))
+                    downloaded_size = 0
+
                     with open(filename, 'wb') as file:
-                        file.write(download_response.content)
-                    logging.info(f"Downloaded {filename} successfully.")
+                        for chunk in download_response.iter_content(chunk_size=1024):
+                            if chunk:
+                                file.write(chunk)
+                                downloaded_size += len(chunk)
+
+                    # Logging the download progress with final_url
+                    logging.info(
+                        f"URL:{final_url} [{downloaded_size}/{total_size}] -> \"{filename}\" [1]"
+                    )
                     downloaded_files.append(filename)  # Store downloaded filename
     except Exception as e:
         logging.error(f"Error while downloading from {release_url}: {e}")
