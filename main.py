@@ -57,12 +57,22 @@ chrome_driver_path = "/usr/bin/chromedriver"
 # Create Chrome driver with headless options
 def create_chrome_driver():
     chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument(
-        f"user-agent=Mozilla/5.0 (Android 13; Mobile; rv:125.0) Gecko/125.0 Firefox/125.0"
-    )
+
+    # Declare options
+    options = [
+        "--headless",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        (
+            f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            f"AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36"
+        )
+    ]
+
+    # Add all options
+    for option in options:
+        chrome_options.add_argument(option)
+        
     service = Service(chrome_driver_path)
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
@@ -112,7 +122,10 @@ def download_resource(url: str, filename: str) -> str:
     
     # Add User-Agent header
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Android 13; Mobile; rv:125.0) Gecko/125.0 Firefox/125.0'
+        'User-Agent': (
+            f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            f"AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36"
+        )
     }
 
     response = requests.get(url, headers=headers, stream=True)
@@ -240,7 +253,9 @@ def download_assets_from_repo(release_url):
     downloaded_files = []
     
     try:
-        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.ID, "repo-content-pjax-container")))
+        WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located((By.ID, "repo-content-pjax-container"))
+        )
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
 
         asset_links = WebDriverWait(driver, 15).until(
@@ -249,26 +264,25 @@ def download_assets_from_repo(release_url):
 
         for link in asset_links:
             asset_url = link.get_attribute('href')
-            if not asset_url.endswith('.asc'):  # Skip signature files
-                response = requests.head(asset_url, allow_redirects=True)
-                if response.status_code == 200:
-                    download_response = requests.get(asset_url, allow_redirects=True, stream=True)
-                    final_url = download_response.url  # Get the final URL after any redirections
-                    filename = asset_url.split('/')[-1]
-                    total_size = int(download_response.headers.get('Content-Length', 0))
-                    downloaded_size = 0
+            response = requests.head(asset_url, allow_redirects=True)
+            if response.status_code == 200:
+                download_response = requests.get(asset_url, allow_redirects=True, stream=True)
+                final_url = download_response.url  # Get the final URL after any redirections
+                filename = asset_url.split('/')[-1]
+                total_size = int(download_response.headers.get('Content-Length', 0))
+                downloaded_size = 0
 
-                    with open(filename, 'wb') as file:
-                        for chunk in download_response.iter_content(chunk_size=1024):
-                            if chunk:
-                                file.write(chunk)
-                                downloaded_size += len(chunk)
+                with open(filename, 'wb') as file:
+                    for chunk in download_response.iter_content(chunk_size=1024):
+                        if chunk:
+                            file.write(chunk)
+                            downloaded_size += len(chunk)
 
-                    # Logging the download progress with final_url
-                    logging.info(
-                        f"URL:{final_url} [{downloaded_size}/{total_size}] -> \"{filename}\" [1]"
-                    )
-                    downloaded_files.append(filename)  # Store downloaded filename
+                # Logging the download progress with final_url
+                logging.info(
+                    f"URL:{final_url} [{downloaded_size}/{total_size}] -> \"{filename}\" [1]"
+                )
+                downloaded_files.append(filename)  # Store downloaded filename
     except Exception as e:
         logging.error(f"Error while downloading from {release_url}: {e}")
     finally:
@@ -328,7 +342,9 @@ def create_github_release(app_name, download_files, apk_file_path):
                 if delete_asset_response.status_code == 204:
                     logging.info(f"Successfully deleted existing asset: {asset['name']}")
                 else:
-                    logging.error(f"Failed to delete existing asset: {asset['name']} - {delete_asset_response.json()}")
+                    logging.error(
+                        f"Failed to delete existing asset: {asset['name']} - {delete_asset_response.json()}"
+                    )
         
     else:
         # Create new release if it doesn't exist
@@ -364,7 +380,10 @@ def create_github_release(app_name, download_files, apk_file_path):
         existing_release_id = new_release["id"]
 
     # Upload new APK file
-    upload_url_apk = f"https://uploads.github.com/repos/{repository}/releases/{existing_release_id}/assets?name={os.path.basename(apk_file_path)}"
+    upload_url_apk = (
+        f"https://uploads.github.com/repos/{repository}/releases/"
+        f"{existing_release_id}/assets?name={os.path.basename(apk_file_path)}"
+    )
     with open(apk_file_path, 'rb') as apk_file:
         apk_file_content = apk_file.read()
 
@@ -400,18 +419,26 @@ def run_build():
         all_downloaded_files.extend(downloaded_files)  # Combine all downloaded files
 
     # After downloading, find the necessary files
-    cli_jar_files = [f for f in all_downloaded_files if 'revanced-cli' in f and f.endswith('.jar')]
-    patches_jar_files = [f for f in all_downloaded_files if 'revanced-patches' in f and f.endswith('.jar')]
-    integrations_apk_files = [f for f in all_downloaded_files if 'revanced-integrations' in f and f.endswith('.apk')]
-
+    cli_jar = next(
+        filter(
+            lambda f: 'revanced-cli' in f and f.endswith('.jar'), all_downloaded_files
+        )
+    )
+    patches_jar = next(
+        filter(
+            lambda f: 'revanced-patches' in f and f.endswith('.jar'), all_downloaded_files
+        )
+    )
+    integrations_apk = next(
+        filter(
+            lambda f: 'revanced-integrations' in f and f.endswith('.apk'), all_downloaded_files
+        )
+    )
+    
     # Ensure we have the required files
-    if not cli_jar_files or not patches_jar_files or not integrations_apk_files:
+    if not cli_jar or not patches_jar or not integrations_apk:
         logging.error("Failed to download necessary ReVanced files.")
     else:
-        cli_jar = cli_jar_files[0]  # Get the first (and probably only) CLI JAR
-        patches_jar = patches_jar_files[0]  # Get the first patches JAR
-        integrations_apk = integrations_apk_files[0]  # Get the first integrations APK
-
         # Download the YouTube APK
         input_apk, version = download_uptodown()
 
@@ -435,11 +462,11 @@ def run_build():
         else:
             logging.error("Failed to download the YouTube APK.")
 
-
+    
 # Function to get the latest release version from a GitHub repository
 def get_latest_release_version(repo: str) -> str:
     url = f"https://api.github.com/repos/{repo}/releases/latest"
-    headers = {"Authorization": f"token {os.getenv('GITHUB_TOKEN')}"}
+    headers = {"Authorization": f"token {github_token}"}
     
     try:
         response = requests.get(url, headers=headers)
