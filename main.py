@@ -152,7 +152,7 @@ def download_resource(url: str, filename: str) -> str:
         return None
 
 # Function to run the Java command
-def run_java_command(cli_jar, patches_jar, integrations_apk, input_apk, version):
+def run_java_command(cli_jar, patches_jar, input_apk, version):
     output_apk = f'youtube-revanced-v{version}.apk'
     
     lib_command = [
@@ -166,10 +166,9 @@ def run_java_command(cli_jar, patches_jar, integrations_apk, input_apk, version)
      
     patch_command = [
         'java', '-jar', cli_jar, 'patch',
-        '-b', patches_jar,      # ReVanced patches
-        '-m', integrations_apk, # ReVanced integrations APK
-        input_apk,              # Original YouTube APK
-        '-o', output_apk        # Output APK
+        '--patches', patches_jar,      # ReVanced patches
+        input_apk,                     # Original YouTube APK
+        '--out', output_apk            # Output APK
     ]
     
     try:
@@ -219,32 +218,29 @@ def run_java_command(cli_jar, patches_jar, integrations_apk, input_apk, version)
         return None
         
 # Main function to download APK from Uptodown based on patches.json versions
-def download_uptodown():
-    with open("./patches.json", "r") as patches_file:
-        patches = json.load(patches_file)
+def download_uptodown(cli, patches):
+    output = subprocess.check_output([
+        'java', '-jar', cli, 
+        'list-versions',
+        '-f', 'com.google.android.youtube',
+        patches
+    ])
+    output = output.decode('utf-8')
 
-        versions = set()
-        for patch in patches:
-            compatible_packages = patch.get("compatiblePackages")
-            if compatible_packages and isinstance(compatible_packages, list):
-                for package in compatible_packages:
-                    if (
-                        package.get("name") == "com.google.android.youtube" and
-                        package.get("versions") is not None and
-                        isinstance(package["versions"], list) and
-                        package["versions"]
-                    ):
-                        versions.update(
-                            map(str.strip, package["versions"])
-                        )
-                        
-        version = sorted(versions, reverse=True)[0]  # Use the latest version
-        download_link = get_download_link(version)
-        filename = f"youtube-v{version}.apk"
+    # Find all versions supported 
+    versions = [
+        line.split(' ')[0].strip()
+        for line in output.splitlines()[2:]
+        if 'Any' not in line and line.split(' ')[0].strip()
+    ]
+
+    version = max(versions, key=lambda v: list(map(int, v.split('.'))))
+    download_link = get_download_link(version)
+    filename = f"youtube-v{version}.apk"
         
-        file_path = download_resource(download_link, filename)
-        return file_path, version  # Return both the file path and version
-
+    file_path = download_resource(download_link, filename)
+    return file_path, version  # Return both the file path and version
+    
 # Download ReVanced assets from GitHub and return the paths of the downloaded files
 def download_assets_from_repo(release_url):
     driver = create_chrome_driver()
@@ -302,11 +298,9 @@ def extract_version(file_path):
 # Create GitHub release function
 def create_github_release(app_name, download_files, apk_file_path):
     patch_file_path = download_files["revanced-patches"]
-    integrations_file_path = download_files["revanced-integrations"]
     cli_file_path = download_files["revanced-cli"]
 
     patchver = extract_version(patch_file_path)
-    integrationsver = extract_version(integrations_file_path)
     cliver = extract_version(cli_file_path)
     tag_name = f"{app_name}-v{patchver}"
 
@@ -353,7 +347,6 @@ def create_github_release(app_name, download_files, apk_file_path):
 
 ## Build Tools:
 - **ReVanced Patches:** v{patchver}
-- **ReVanced Integrations:** v{integrationsver}
 - **ReVanced CLI:** v{cliver}
 
 ## Note:
@@ -408,8 +401,7 @@ def run_build():
     # List of repositories to download assets from
     repositories = [
         "https://github.com/ReVanced/revanced-patches/releases/latest",
-        "https://github.com/ReVanced/revanced-cli/releases/latest",
-        "https://github.com/ReVanced/revanced-integrations/releases/latest"
+        "https://github.com/ReVanced/revanced-cli/releases/latest"
     ]
 
     # Download the assets
@@ -426,32 +418,26 @@ def run_build():
     )
     patches_jar = next(
         filter(
-            lambda f: 'revanced-patches' in f and f.endswith('.jar'), all_downloaded_files
-        )
-    )
-    integrations_apk = next(
-        filter(
-            lambda f: 'revanced-integrations' in f and f.endswith('.apk'), all_downloaded_files
+            lambda f: 'patches' in f and f.endswith('.rvp'), all_downloaded_files
         )
     )
     
     # Ensure we have the required files
-    if not cli_jar or not patches_jar or not integrations_apk:
+    if not cli_jar or not patches_jar:
         logging.error("Failed to download necessary ReVanced files.")
     else:
         # Download the YouTube APK
-        input_apk, version = download_uptodown()
+        input_apk, version = download_uptodown(cli_jar, patches_jar)
 
         if input_apk:
             # Run the patching process
-            output_apk = run_java_command(cli_jar, patches_jar, integrations_apk, input_apk, version)
+            output_apk = run_java_command(cli_jar, patches_jar, input_apk, version)
             if output_apk:
                 logging.info(f"Successfully created the patched APK: {output_apk}")
 
                 # Prepare download files for the release
                 download_files = {
                     "revanced-patches": patches_jar,
-                    "revanced-integrations": integrations_apk,
                     "revanced-cli": cli_jar
                 }
 
