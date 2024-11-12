@@ -152,7 +152,7 @@ def download_resource(url: str, filename: str) -> str:
         return None
 
 # Function to run the Java command
-def run_java_command(cli_jar, patches_jar, input_apk, version):
+def run_java_command(cli, patches, input_apk, version):
     output_apk = f'youtube-revanced-v{version}.apk'
     
     lib_command = [
@@ -165,10 +165,10 @@ def run_java_command(cli_jar, patches_jar, input_apk, version):
     ]
      
     patch_command = [
-        'java', '-jar', cli_jar, 'patch',
-        '--patches', patches_jar,      # ReVanced patches
-        input_apk,                     # Original YouTube APK
-        '--out', output_apk            # Output APK
+        'java', '-jar', cli, 'patch',
+        '--patches', patches,      # ReVanced patches
+        input_apk,                 # Original YouTube APK
+        '--out', output_apk        # Output APK
     ]
     
     try:
@@ -411,19 +411,18 @@ def run_build():
         all_downloaded_files.extend(downloaded_files)  # Combine all downloaded files
 
     # After downloading, find the necessary files
-    cli_jar = next(
+    find_file = lambda keyword, extension: next(
         filter(
-            lambda f: 'revanced-cli' in f and f.endswith('.jar'), all_downloaded_files
+            lambda f: keyword in f and f.endswith(extension), all_downloaded_files
         )
     )
-    patches_jar = next(
-        filter(
-            lambda f: 'patches' in f and f.endswith('.rvp'), all_downloaded_files
-        )
-    )
+
+    cli = find_file('revanced-cli', '.jar')
+    patches = find_file('patches', '.rvp')
+    
     
     # Ensure we have the required files
-    if not cli_jar or not patches_jar:
+    if not cli or not patches:
         logging.error("Failed to download necessary ReVanced files.")
     else:
         # Download the YouTube APK
@@ -431,14 +430,14 @@ def run_build():
 
         if input_apk:
             # Run the patching process
-            output_apk = run_java_command(cli_jar, patches_jar, input_apk, version)
+            output_apk = run_java_command(cli, patches, input_apk, version)
             if output_apk:
                 logging.info(f"Successfully created the patched APK: {output_apk}")
 
                 # Prepare download files for the release
                 download_files = {
-                    "revanced-patches": patches_jar,
-                    "revanced-cli": cli_jar
+                    "revanced-patches": patches,
+                    "revanced-cli": cli
                 }
 
                 # Create GitHub release
