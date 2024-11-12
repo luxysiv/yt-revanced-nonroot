@@ -418,8 +418,7 @@ def run_build():
     )
 
     cli = find_file('revanced-cli', '.jar')
-    patches = find_file('patches', '.rvp')
-    
+    patches = find_file('patches', '.rvp')    
     
     # Ensure we have the required files
     if not cli or not patches:
