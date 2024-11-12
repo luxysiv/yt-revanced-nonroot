@@ -426,7 +426,7 @@ def run_build():
         logging.error("Failed to download necessary ReVanced files.")
     else:
         # Download the YouTube APK
-        input_apk, version = download_uptodown(cli_jar, patches_jar)
+        input_apk, version = download_uptodown(cli, patches)
 
         if input_apk:
             # Run the patching process
