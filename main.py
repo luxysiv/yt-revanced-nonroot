@@ -98,7 +98,7 @@ def get_download_link(version: str) -> str:
         for div in divs:
             version_span = div.find("span", class_="version")
             if version_span and version_span.text.strip() == version:
-                dl_url = div["data-url"]
+                dl_url = f"{div["data-url"]}-x"
                 driver.get(dl_url)
 
                 # Parse the download page for the actual download link
