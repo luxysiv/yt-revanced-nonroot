@@ -153,7 +153,8 @@ def download_resource(url: str, filename: str) -> str:
 
 # Function to run the Java command
 def run_java_command(cli, patches, input_apk, version):
-    output_apk = f'youtube-revanced-v{version}.apk'
+    patch_apk = f'youtube-revanced-patch-v{version}.apk'
+    sign_apk = f'youtube-revanced-v{version}.apk'
     
     lib_command = [
         'zip',
@@ -168,7 +169,25 @@ def run_java_command(cli, patches, input_apk, version):
         'java', '-jar', cli, 'patch',
         '--patches', patches,      # ReVanced patches
         input_apk,                 # Original YouTube APK
-        '--out', output_apk        # Output APK
+        '--out', patch_apk        # Output APK
+    ]
+
+    sign_command = [
+        max(
+            glob.glob(
+                os.path.join(
+                    os.environ.get('ANDROID_SDK_ROOT'), 'build-tools', '*/apksigner'
+                )
+            ), key=os.path.getctime
+        ),
+        'sign',
+        '--verbose',
+        '--ks', './public.jks',
+        '--ks-pass', 'pass:public',
+        '--key-pass', 'pass:public',
+        '--ks-key-alias', 'public',
+        '--in', patch_apk,
+        '--out', sign_apk
     ]
     
     try:
@@ -191,7 +210,7 @@ def run_java_command(cli, patches, input_apk, version):
             logging.error(f"Lib command exited with return code: {process_lib.returncode}")
             return None  # Exit if lib_command fails
 
-        # Now run the patch command
+        # Run the patch command
         logging.info(f"Patch {input_apk} with ReVanced patches...")
         process_patch = subprocess.Popen(patch_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
@@ -210,8 +229,27 @@ def run_java_command(cli, patches, input_apk, version):
             logging.error(f"Patch command exited with return code: {process_patch.returncode}")
             return None  # Exit if patch_command fails
 
-        logging.info(f"Successfully patched APK to {output_apk}.")
-        return output_apk  # Return the path to the output APK
+        # Run the patch command
+        logging.info(f"Sign {patch_apk} with keystore...")
+        process_sign = subprocess.Popen(sign_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        # Print stdout and stderr in real-time with flush
+        for line in iter(process_sign.stdout.readline, b''):
+            print(line.decode().strip(), flush=True)  # Direct print for stdout with flush
+        
+        for line in iter(process_sign.stderr.readline, b''):
+            print(f"ERROR: {line.decode().strip()}", flush=True)  # Direct print for stderr with flush
+        
+        process_sign.stdout.close()
+        process_sign.stderr.close()
+        process_sign.wait()
+
+        if process_sign.returncode != 0:
+            logging.error(f"Sign command exited with return code: {process_sign.returncode}")
+            return None  # Exit if sign_command fails
+
+        logging.info(f"Successfully signed APK to {sign_apk}.")
+        return sign_apk  # Return the path to the output APK
 
     except Exception as e:
         logging.error(f"Exception occurred: {e}")
