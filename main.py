@@ -172,7 +172,7 @@ def download_resource(url: str, output_dir: str = "./") -> str:
         return None
 
 # Function to run the Java command
-def run_java_command(cli, patches, input_apk, version):
+def patch_sign(cli, patches, input_apk, version):
     patch_apk = f'youtube-revanced-patch-v{version}.apk'
     sign_apk = f'youtube-revanced-v{version}.apk'
     
@@ -274,7 +274,47 @@ def run_java_command(cli, patches, input_apk, version):
     except Exception as e:
         logging.error(f"Exception occurred: {e}")
         return None
+
+# Pack APK
+def pack_apk(input_apk, version):
+    extract_dir = "./YouTube"
+    
+    os.makedirs(extract_dir, exist_ok=True)
+    extract_command = [
+        'unzip',
+        '--out',
+        input_apk,
+        '-d',
+        extract_dir
+    ]
+    
+    try:
+        # Run the lib_command first to delete unnecessary libs
+        logging.info(f"Remove some architectures...")
+        process_extract = subprocess.Popen(extract_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
+        # Print stdout and stderr in real-time with flush
+        for line in iter(process_extract.stdout.readline, b''):
+            print(line.decode().strip(), flush=True)  # Direct print for stdout with flush
+        
+        for line in iter(process_extract.stderr.readline, b''):
+            print(f"ERROR: {line.decode().strip()}", flush=True)  # Direct print for stderr with flush
+        
+        process_extract.stdout.close()
+        process_extract.stderr.close()
+        process_extract.wait()
+
+        if process_extract.returncode != 0:
+            logging.error(f"Lib command exited with return code: {process_lib.returncode}")
+            return None  # Exit if lib_command fails
+
+        # logging.info(f"Successfully signed APK to {sign_apk}.")
+        # return sign_apk  # Return the path to the output APK
+
+    except Exception as e:
+        logging.error(f"Exception occurred: {e}")
+        return None
+
 # Main function to download APK from Uptodown based on patches.json versions
 def download_uptodown(cli, patches):
     output = subprocess.check_output([
@@ -459,7 +499,8 @@ def run_build():
     # List of repositories to download assets from
     repositories = [
         "https://github.com/ReVanced/revanced-patches/releases/latest",
-        "https://github.com/ReVanced/revanced-cli/releases/latest"
+        "https://github.com/ReVanced/revanced-cli/releases/latest",
+        "https://github.com/REAndroid/APKEditor/releases/latest"
     ]
 
     # Download the assets
@@ -486,8 +527,9 @@ def run_build():
         input_apk, version = download_uptodown(cli, patches)
 
         if input_apk:
+            pack_apk
             # Run the patching process
-            output_apk = run_java_command(cli, patches, input_apk, version)
+            output_apk = patch_sign(cli, patches, input_apk, version)
             if output_apk:
                 logging.info(f"Successfully created the patched APK: {output_apk}")
 
