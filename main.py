@@ -118,38 +118,57 @@ def get_download_link(version: str) -> str:
     driver.quit()
     return None
 
-def download_resource(url: str, filename: str) -> str:
-    filepath = os.path.join("./", filename)
+import os
+import logging
+import requests
+from urllib.parse import urlparse, unquote
+
+def get_filename_from_cd(headers, url):
+    """Lấy tên file từ Content-Disposition hoặc từ URL."""
+    cd = headers.get("Content-Disposition")
+    if cd and "filename=" in cd:
+        filename = cd.split("filename=")[1].strip().strip('"')
+        return filename
+    else:
+        # Lấy tên file từ URL nếu không có Content-Disposition
+        parsed_url = urlparse(url)
+        filename = os.path.basename(parsed_url.path)  # Lấy tên file từ đường dẫn
+        return unquote(filename) if filename else "downloaded_file"
+
+def download_resource(url: str, output_dir: str = "./") -> str:
+    """Tải xuống một tập tin từ URL và lưu với tên giống như trình duyệt."""
     
-    # Add User-Agent header
     headers = {
         'User-Agent': (
-            f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            f"AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36"
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36"
         )
     }
 
-    response = requests.get(url, headers=headers, stream=True)
-    
-    # Check if the request was successful
-    if response.status_code == 200:
-        final_url = response.url  # Get final URL after any redirections
-        total_size = int(response.headers.get('Content-Length', 0))  # Get the total file size
-        downloaded_size = 0
+    try:
+        with requests.get(url, headers=headers, stream=True, timeout=30) as response:
+            response.raise_for_status()  # Kiểm tra lỗi HTTP
+            final_url = response.url
+            filename = get_filename_from_cd(response.headers, final_url)
+            filepath = os.path.join(output_dir, filename)
 
-        with open(filepath, 'wb') as apk_file:
-            for chunk in response.iter_content(chunk_size=1024):
-                if chunk:  # Filter out keep-alive chunks
-                    apk_file.write(chunk)
-                    downloaded_size += len(chunk)        
-        
-        # Logging the download progress
-        logging.info(
-            f"URL: {final_url} [{downloaded_size}/{total_size}] -> \"{filename}\" [1]"
-        )
-        return filepath
-    else:
-        logging.error(f"Failed to download APK. Status code: {response.status_code}")
+            os.makedirs(output_dir, exist_ok=True)  # Tạo thư mục nếu chưa có
+
+            total_size = int(response.headers.get('Content-Length', 0))
+            downloaded_size = 0
+
+            with open(filepath, 'wb') as file:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        file.write(chunk)
+                        downloaded_size += len(chunk)
+
+            logging.info(
+                f"Downloaded: {final_url} [{downloaded_size}/{total_size} bytes] -> \"{filepath}\""
+            )
+            return filepath
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Failed to download file: {e}")
         return None
 
 # Function to run the Java command
@@ -275,9 +294,9 @@ def download_uptodown(cli, patches):
 
     version = max(versions, key=lambda v: list(map(int, v.split('.'))))
     download_link = get_download_link(version)
-    filename = f"youtube-v{version}.apk"
+    #filename = f"youtube-v{version}.apk"
         
-    file_path = download_resource(download_link, filename)
+    file_path = download_resource(download_link)
     return file_path, version  # Return both the file path and version
     
 # Download ReVanced assets from GitHub and return the paths of the downloaded files
