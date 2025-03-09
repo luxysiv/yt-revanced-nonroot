@@ -276,7 +276,7 @@ def patch_sign(cli, patches, input_apk, version):
         return None
 
 # Pack APK
-def pack_apk(input_apk, version):
+def pack_apk(input_apk):
     extract_dir = "./YouTube"
     
     os.makedirs(extract_dir, exist_ok=True)
@@ -527,7 +527,7 @@ def run_build():
         input_apk, version = download_uptodown(cli, patches)
 
         if input_apk:
-            pack_apk
+            pack_apk(input_apk)
             # Run the patching process
             output_apk = patch_sign(cli, patches, input_apk, version)
             if output_apk:
