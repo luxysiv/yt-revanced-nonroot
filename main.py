@@ -283,9 +283,9 @@ def pack_apk(input_apk):
     extract_command = [
         'unzip',
         '--out',
-        input_apk,
+        extract_dir,
         '-d',
-        extract_dir
+        input_apk
     ]
     
     try:
