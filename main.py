@@ -275,26 +275,36 @@ def patch_sign(cli, patches, input_apk, version):
         logging.error(f"Exception occurred: {e}")
         return None
 
+import os
 import zipfile
+import glob
+import logging
 
-def extract_xapk(input_xapk):
-    """ Giải nén `.xapk` và lấy file `.apk` chính."""
+def extract_and_combine_apks(input_xapk):
+    """ Giải nén `.xapk` và kết hợp tất cả các APK thành một file mới."""
     extract_dir = "./extracted_xapk"
     os.makedirs(extract_dir, exist_ok=True)
 
+    # Giải nén XAPK
     with zipfile.ZipFile(input_xapk, 'r') as zip_ref:
         zip_ref.extractall(extract_dir)
 
-    # Tìm file APK trong thư mục vừa giải nén
+    # Tìm tất cả các file APK trong thư mục đã giải nén
     apk_files = glob.glob(os.path.join(extract_dir, "*.apk"))
 
     if not apk_files:
         logging.error("Không tìm thấy file APK trong XAPK!")
         return None
     
-    main_apk = max(apk_files, key=os.path.getsize)  # Chọn file APK lớn nhất
-    logging.info(f"Đã trích xuất {main_apk} từ {input_xapk}")
-    return main_apk
+    # Tạo file ZIP mới để chứa tất cả APK
+    combined_apk_filename = "./combined_apk.zip"
+    with zipfile.ZipFile(combined_apk_filename, 'w') as zipf:
+        for apk in apk_files:
+            # Thêm tất cả các APK vào ZIP
+            zipf.write(apk, os.path.basename(apk))
+
+    logging.info(f"Đã tạo file ZIP kết hợp tại {combined_apk_filename}")
+    return combined_apk_filename
 
 # Main function to download APK from Uptodown based on patches.json versions
 def download_uptodown(cli, patches):
@@ -509,7 +519,7 @@ def run_build():
         if input_apk:
             if input_apk.endswith(".xapk"):
                 logging.info("File tải về là .xapk, đang giải nén...")
-                input_apk = extract_xapk(input_apk)
+                input_apk = extract_and_combine_apks(input_apk)
             
             # Run the patching process
             output_apk = patch_sign(cli, patches, input_apk, version)
