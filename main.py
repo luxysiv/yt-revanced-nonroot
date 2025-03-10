@@ -281,11 +281,9 @@ def pack_apk(input_apk):
     
     os.makedirs(extract_dir, exist_ok=True)
     extract_command = [
-        'unzip',
-        '--out',
-        extract_dir,
-        '-d',
-        input_apk
+    'unzip',
+    input_apk,
+    '-d', extract_dir
     ]
     
     try:
