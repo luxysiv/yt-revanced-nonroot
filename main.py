@@ -275,36 +275,37 @@ def patch_sign(cli, patches, input_apk, version):
         logging.error(f"Exception occurred: {e}")
         return None
 
-import os
-import zipfile
-import glob
-import logging
+# Pack APK
+def pack_apk(input_apk,apk_editor):
 
-def extract_and_combine_apks(input_xapk):
-    """ Giải nén `.xapk` và kết hợp tất cả các APK thành một file mới."""
-    extract_dir = "./extracted_xapk"
-    os.makedirs(extract_dir, exist_ok=True)
-
-    # Giải nén XAPK
-    with zipfile.ZipFile(input_xapk, 'r') as zip_ref:
-        zip_ref.extractall(extract_dir)
-
-    # Tìm tất cả các file APK trong thư mục đã giải nén
-    apk_files = glob.glob(os.path.join(extract_dir, "*.apk"))
-
-    if not apk_files:
-        logging.error("Không tìm thấy file APK trong XAPK!")
-        return None
+    pack_command = [
+    'java', '-jar', apk_editor,
+    'm', '-i', input_apk
+    ]
     
-    # Tạo file ZIP mới để chứa tất cả APK
-    combined_apk_filename = "./combined_apk.zip"
-    with zipfile.ZipFile(combined_apk_filename, 'w') as zipf:
-        for apk in apk_files:
-            # Thêm tất cả các APK vào ZIP
-            zipf.write(apk, os.path.basename(apk))
+    try:
+         # Run the lib_command first to delete unnecessary libs
+        logging.info(f"Pack apk ...")
+        process_pack = subprocess.Popen(pack_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+        # Print stdout and stderr in real-time with flush
+        for line in iter(process_pack.stdout.readline, b''):
+            print(line.decode().strip(), flush=True)  # Direct print for stdout with flush
+        
+        for line in iter(process_pack.stderr.readline, b''):
+            print(f"ERROR: {line.decode().strip()}", flush=True)  # Direct print for stderr with flush
+        
+        process_pack.stdout.close()
+        process_pack.stderr.close()
+        process_pack.wait()
 
-    logging.info(f"Đã tạo file ZIP kết hợp tại {combined_apk_filename}")
-    return combined_apk_filename
+        if process_pack.returncode != 0:
+            logging.error(f"Lib command exited with return code: {process_pack.returncode}")
+            return None  # Exit if lib_command fails
+
+    except Exception as e:
+        logging.error(f"Exception occurred: {e}")
+        return None
 
 # Main function to download APK from Uptodown based on patches.json versions
 def download_uptodown(cli, patches):
@@ -490,7 +491,8 @@ def run_build():
     # List of repositories to download assets from
     repositories = [
         "https://github.com/ReVanced/revanced-patches/releases/latest",
-        "https://github.com/ReVanced/revanced-cli/releases/latest"
+        "https://github.com/ReVanced/revanced-cli/releases/latest",
+        "https://github.com/REAndroid/APKEditor/releases/latest"
     ]
 
     # Download the assets
@@ -508,6 +510,7 @@ def run_build():
 
     cli = find_file('revanced-cli', '.jar')
     patches = find_file('patches', '.rvp')
+    apk_editor = find_file('APKEditor', '.jar')
     
     # Ensure we have the required files
     if not cli or not patches:
@@ -517,10 +520,7 @@ def run_build():
         input_apk, version = download_uptodown(cli, patches)
 
         if input_apk:
-            if input_apk.endswith(".xapk"):
-                logging.info("File tải về là .xapk, đang giải nén...")
-                input_apk = extract_and_combine_apks(input_apk)
-            
+            pack_apk(input_apk,apk_editor)
             # Run the patching process
             output_apk = patch_sign(cli, patches, input_apk, version)
             if output_apk:
