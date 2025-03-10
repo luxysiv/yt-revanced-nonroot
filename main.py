@@ -276,19 +276,25 @@ def patch_sign(cli, patches, input_apk, version):
         return None
 
 # Pack APK
-def pack_apk(input_apk):
-    extract_dir = "./YouTube"
+def pack_apk(input_apk,apk_editor):
     
+    extract_dir = "./YouTube"     
     os.makedirs(extract_dir, exist_ok=True)
+    
     extract_command = [
     'unzip',
     input_apk,
     '-d', extract_dir
     ]
+
+    pack_command = [
+    'java', '-jar', apk_editor,
+    'm', '-i', extract_dir
+    ]
     
     try:
         # Run the lib_command first to delete unnecessary libs
-        logging.info(f"Remove some architectures...")
+        logging.info(f"Extract xapk ...")
         process_extract = subprocess.Popen(extract_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
         # Print stdout and stderr in real-time with flush
@@ -303,11 +309,27 @@ def pack_apk(input_apk):
         process_extract.wait()
 
         if process_extract.returncode != 0:
-            logging.error(f"Lib command exited with return code: {process_lib.returncode}")
+            logging.error(f"Lib command exited with return code: {process_extract.returncode}")
             return None  # Exit if lib_command fails
 
-        # logging.info(f"Successfully signed APK to {sign_apk}.")
-        # return sign_apk  # Return the path to the output APK
+         # Run the lib_command first to delete unnecessary libs
+        logging.info(f"Pack apk ...")
+        process_pack = subprocess.Popen(pack_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+        # Print stdout and stderr in real-time with flush
+        for line in iter(process_pack.stdout.readline, b''):
+            print(line.decode().strip(), flush=True)  # Direct print for stdout with flush
+        
+        for line in iter(process_pack.stderr.readline, b''):
+            print(f"ERROR: {line.decode().strip()}", flush=True)  # Direct print for stderr with flush
+        
+        process_pack.stdout.close()
+        process_pack.stderr.close()
+        process_pack.wait()
+
+        if process_pack.returncode != 0:
+            logging.error(f"Lib command exited with return code: {process_pack.returncode}")
+            return None  # Exit if lib_command fails
 
     except Exception as e:
         logging.error(f"Exception occurred: {e}")
@@ -515,7 +537,8 @@ def run_build():
     )
 
     cli = find_file('revanced-cli', '.jar')
-    patches = find_file('patches', '.rvp')    
+    patches = find_file('patches', '.rvp')
+    apk_editor = find_file('APKEditor', '.jar')
     
     # Ensure we have the required files
     if not cli or not patches:
