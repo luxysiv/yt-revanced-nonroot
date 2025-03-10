@@ -548,7 +548,7 @@ def run_build():
         input_apk, version = download_uptodown(cli, patches)
 
         if input_apk:
-            pack_apk(input_apk)
+            pack_apk(input_apk,apk_editor)
             # Run the patching process
             output_apk = patch_sign(cli, patches, input_apk, version)
             if output_apk:
