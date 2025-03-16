@@ -1,6 +1,8 @@
 ### Note
 
-Only patch YouTube, use Uptodown APK source
+Only patch YouTube, use APKfree source
+
+* F*** APKmirror & Uptodown 
 
 ### Latest release information
   - [Revanced](https://github.com/revanced/revanced-patches/releases/latest)
