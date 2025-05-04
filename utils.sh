@@ -2,6 +2,8 @@
 
 # Function to perform HTTP requests
 http_request() {
+    local output_file="$1"
+    shift
     wget --header="User-Agent: Mozilla/5.0 (Android 13; Mobile; rv:125.0) Gecko/125.0 Firefox/125.0" \
          --header="Content-Type: application/octet-stream" \
          --header="Accept-Language: en-US,en;q=0.9" \
@@ -9,7 +11,8 @@ http_request() {
          --header="Upgrade-Insecure-Requests: 1" \
          --header="Cache-Control: max-age=0" \
          --header="Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8" \
-         --keep-session-cookies --timeout=30 -nv -O "$@"
+         --keep-session-cookies --timeout=30 -nv -O "$output_file" "$@"
+    return $?
 }
 
 # Function to get supported versions from Revanced
@@ -47,13 +50,19 @@ download_apk() {
             local url="$base_url/$page"
             echo "Checking page $page: $url"
 
-            local page_content=$(http_request - "$url")
-            
-            if [[ "$page_content" == *"404 Not Found"* ]]; then
-                echo "Error 404: Page $page not found. Stopping script."
-                exit 0
+            local tmp_file=$(mktemp)
+            http_request "$tmp_file" "$url"
+            local status=$?
+
+            if [ $status -eq 8 ]; then
+                echo "Page $page not found (404). Moving to next version..."
+                rm -f "$tmp_file"
+                break
             fi
-    
+
+            local page_content=$(<"$tmp_file")
+            rm -f "$tmp_file"
+
             local available_versions=($(echo "$page_content" | grep -oP '(?<=class="limit-line">)[^<]+'))
 
             if [ ${#available_versions[@]} -eq 0 ] || [[ "${available_versions[-1]}" < "$version" ]]; then
@@ -66,7 +75,11 @@ download_apk() {
 
             if [ -n "$apk_url" ]; then
                 echo "Found download page for version $version, fetching content..."
-                local download_page=$(http_request - "$apk_url")
+                local tmp_dl_page=$(mktemp)
+                http_request "$tmp_dl_page" "$apk_url"
+                local download_page=$(<"$tmp_dl_page")
+                rm -f "$tmp_dl_page"
+
                 local download_url=$(echo "$download_page" | grep 'class="buttonDownload box-shadow-mod"' | grep -oP 'href="\K[^"]+')
 
                 if [ -n "$download_url" ]; then
